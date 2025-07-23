@@ -54,7 +54,7 @@ interface DownloadProgress {
 }
 
 const API_BASE = process.env.NODE_ENV === 'production' 
-  ? 'https://your-api-domain.com' 
+  ? 'https://video-downloader-app-ic05.onrender.com'
   : 'http://localhost:8000'
 
 export default function VideoDownloader() {
@@ -112,7 +112,7 @@ export default function VideoDownloader() {
         setSelectedSubtitle(response.data.subtitles[0].lang)
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error:', error)
       const errorMsg = error.response?.data?.detail || error.message || 'Error desconocido'
       setError(`Error al obtener información: ${errorMsg}`)
@@ -141,7 +141,7 @@ export default function VideoDownloader() {
       setDownloadId(response.data.download_id)
       pollDownloadProgress(response.data.download_id)
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error:', error)
       const errorMsg = error.response?.data?.detail || error.message || 'Error desconocido'
       setError(`Error al iniciar descarga: ${errorMsg}`)
