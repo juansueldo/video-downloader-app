@@ -112,7 +112,7 @@ export default function VideoDownloader() {
         setSelectedSubtitle(response.data.subtitles[0].lang)
       }
 
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error:', error)
       const errorMsg = error.response?.data?.detail || error.message || 'Error desconocido'
       setError(`Error al obtener información: ${errorMsg}`)
@@ -141,7 +141,7 @@ export default function VideoDownloader() {
       setDownloadId(response.data.download_id)
       pollDownloadProgress(response.data.download_id)
 
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error:', error)
       const errorMsg = error.response?.data?.detail || error.message || 'Error desconocido'
       setError(`Error al iniciar descarga: ${errorMsg}`)
