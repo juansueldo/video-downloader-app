@@ -142,6 +142,7 @@ async def get_video_info(request: VideoInfoRequest):
             'no_warnings': True,
             'skip_download': True,
             'extract_flat': False,
+            'cookiefile': 'cookies/cookies.txt',
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -264,6 +265,7 @@ async def download_video(request: DownloadRequest, background_tasks: BackgroundT
             'outtmpl': str(DOWNLOAD_DIR / filename_template),
             'progress_hooks': [progress_hook],
             'no_warnings': True,
+            'cookiefile': 'cookies/cookies.txt',
         }
 
         # Configurar subtítulos
