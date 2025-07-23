@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { 
-  Download, Video, Music, FileText, Loader2, CheckCircle, 
-  AlertCircle, Play, Eye, ThumbsUp, Calendar, Clock,
+import Image from 'next/image'
+import {
+  Download, Video, Music, FileText, Loader2, CheckCircle,
+  AlertCircle, Eye, ThumbsUp, Calendar, Clock,
   Zap, HardDrive
 } from 'lucide-react'
 
@@ -53,7 +54,7 @@ interface DownloadProgress {
   error?: string
 }
 
-const API_BASE = process.env.NODE_ENV === 'production' 
+const API_BASE = process.env.NODE_ENV === 'production'
   ? 'https://video-downloader-app-ic05.onrender.com'
   : 'http://localhost:8000'
 
@@ -65,11 +66,9 @@ export default function VideoDownloader() {
   const [includeSubtitles, setIncludeSubtitles] = useState(false)
   const [selectedSubtitle, setSelectedSubtitle] = useState('')
   const [audioOnly, setAudioOnly] = useState(false)
-  const [downloadId, setDownloadId] = useState('')
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
   const [error, setError] = useState('')
 
-  // Limpiar error cuando cambie la URL
   useEffect(() => {
     setError('')
     setVideoInfo(null)
@@ -100,21 +99,15 @@ export default function VideoDownloader() {
     setError('')
 
     try {
-      const response = await axios.post(`${API_BASE}/api/video-info`, { url }, {
-        timeout: 30000 // 30 segundos timeout
-      })
-
+      const response = await axios.post(`${API_BASE}/api/video-info`, { url }, { timeout: 30000 })
       setVideoInfo(response.data)
       setSelectedFormat(response.data.formats[0]?.format_id || '')
-
-      // Auto-seleccionar primer subtítulo si está disponible
       if (response.data.subtitles.length > 0) {
         setSelectedSubtitle(response.data.subtitles[0].lang)
       }
-
-    } catch (error) {
-      console.error('Error:', error)
-      const errorMsg = error.response?.data?.detail || error.message || 'Error desconocido'
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } }, message?: string }
+      const errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
       setError(`Error al obtener información: ${errorMsg}`)
     } finally {
       setLoading(false)
@@ -138,12 +131,11 @@ export default function VideoDownloader() {
         audio_only: audioOnly
       })
 
-      setDownloadId(response.data.download_id)
       pollDownloadProgress(response.data.download_id)
 
-    } catch (error) {
-      console.error('Error:', error)
-      const errorMsg = error.response?.data?.detail || error.message || 'Error desconocido'
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } }, message?: string }
+      const errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
       setError(`Error al iniciar descarga: ${errorMsg}`)
     }
   }
@@ -156,14 +148,12 @@ export default function VideoDownloader() {
 
         if (response.data.status === 'completed') {
           clearInterval(interval)
-          // Descargar archivo automáticamente
           const link = document.createElement('a')
           link.href = `${API_BASE}/api/download-file/${id}`
           link.download = ''
           document.body.appendChild(link)
           link.click()
           document.body.removeChild(link)
-
         } else if (response.data.status === 'error') {
           clearInterval(interval)
           setError('Error en la descarga: ' + response.data.error)
@@ -175,7 +165,6 @@ export default function VideoDownloader() {
       }
     }, 1000)
 
-    // Limpiar interval después de 10 minutos
     setTimeout(() => clearInterval(interval), 600000)
   }
 
@@ -192,7 +181,6 @@ export default function VideoDownloader() {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
     const secs = seconds % 60
-
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     }
