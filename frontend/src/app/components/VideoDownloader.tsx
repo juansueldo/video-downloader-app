@@ -6,7 +6,7 @@ import Image from 'next/image'
 import {
   Download, Video, Music, FileText, Loader2, CheckCircle,
   AlertCircle, Eye, ThumbsUp, Calendar, Clock,
-  Zap, HardDrive
+  Zap, HardDrive, Cookie, RefreshCw, Shield
 } from 'lucide-react'
 
 interface VideoFormat {
@@ -54,6 +54,14 @@ interface DownloadProgress {
   error?: string
 }
 
+interface CookieStatus {
+  exists: boolean
+  file_size?: number
+  age_hours?: number
+  needs_refresh?: boolean
+  error?: string
+}
+
 const API_BASE = process.env.NODE_ENV === 'production'
   ? 'https://video-downloader-app-ic05.onrender.com'
   : 'http://localhost:8000'
@@ -68,12 +76,69 @@ export default function VideoDownloader() {
   const [audioOnly, setAudioOnly] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
   const [error, setError] = useState('')
+  
+  // Estados para cookies
+  const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null)
+  const [cookieLoading, setCookieLoading] = useState(false)
+  const [showCookieDetails, setShowCookieDetails] = useState(false)
+
+  // Verificar cookies al cargar la página
+  useEffect(() => {
+    checkCookieStatus()
+  }, [])
 
   useEffect(() => {
     setError('')
     setVideoInfo(null)
     setDownloadProgress(null)
   }, [url])
+
+  const checkCookieStatus = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/cookies/status`)
+      setCookieStatus(response.data)
+    } catch (error) {
+      console.error('Error checking cookies:', error)
+      setCookieStatus({ exists: false, needs_refresh: true })
+    }
+  }
+
+  const refreshCookies = async () => {
+    setCookieLoading(true)
+    try {
+      const response = await axios.post(`${API_BASE}/api/cookies/refresh`)
+      if (response.data.success) {
+        await checkCookieStatus()
+        setError('')
+      }
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.detail || error?.message || 'Error desconocido'
+      setError(`Error actualizando cookies: ${errorMsg}`)
+    } finally {
+      setCookieLoading(false)
+    }
+  }
+
+  const ensureCookiesBeforeDownload = async (): Promise<boolean> => {
+    // Verificar estado actual de cookies
+    await checkCookieStatus()
+    
+    if (!cookieStatus?.exists || cookieStatus?.needs_refresh) {
+      setError('Actualizando cookies necesarias para la descarga...')
+      
+      try {
+        await refreshCookies()
+        // Esperar un momento para que se procesen
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        return true
+      } catch (error) {
+        setError('No se pudieron actualizar las cookies. Intenta nuevamente.')
+        return false
+      }
+    }
+    
+    return true
+  }
 
   const isValidYouTubeUrl = (url: string) => {
     const patterns = [
@@ -99,7 +164,17 @@ export default function VideoDownloader() {
     setError('')
 
     try {
-      const response = await axios.post(`${API_BASE}/api/video-info`, { url }, { timeout: 30000 })
+      // Asegurar que tenemos cookies antes de obtener info
+      const cookiesReady = await ensureCookiesBeforeDownload()
+      if (!cookiesReady) {
+        setLoading(false)
+        return
+      }
+
+      const response = await axios.post(`${API_BASE}/api/video-info`, { url }, { 
+        timeout: 30000 
+      })
+      
       setVideoInfo(response.data)
       setSelectedFormat(response.data.formats[0]?.format_id || '')
       if (response.data.subtitles.length > 0) {
@@ -107,7 +182,16 @@ export default function VideoDownloader() {
       }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } }, message?: string }
-      const errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
+      let errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
+      
+      // Si es un error relacionado con cookies, sugerir actualización
+      if (errorMsg.includes('Sign in to confirm') || 
+          errorMsg.includes('private') || 
+          errorMsg.includes('available')) {
+        errorMsg += '. Intenta actualizar las cookies y vuelve a intentar.'
+        setShowCookieDetails(true)
+      }
+      
       setError(`Error al obtener información: ${errorMsg}`)
     } finally {
       setLoading(false)
@@ -123,6 +207,12 @@ export default function VideoDownloader() {
     setError('')
 
     try {
+      // Asegurar cookies antes de descargar
+      const cookiesReady = await ensureCookiesBeforeDownload()
+      if (!cookiesReady) {
+        return
+      }
+
       const response = await axios.post(`${API_BASE}/api/download`, {
         url,
         format_id: selectedFormat,
@@ -135,7 +225,16 @@ export default function VideoDownloader() {
 
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } }, message?: string }
-      const errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
+      let errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
+      
+      // Si es un error relacionado con cookies
+      if (errorMsg.includes('Sign in to confirm') || 
+          errorMsg.includes('private') || 
+          errorMsg.includes('available')) {
+        errorMsg += '. Las cookies pueden estar desactualizadas.'
+        setShowCookieDetails(true)
+      }
+      
       setError(`Error al iniciar descarga: ${errorMsg}`)
     }
   }
@@ -194,8 +293,94 @@ export default function VideoDownloader() {
     return num.toString()
   }
 
+  const getCookieStatusColor = () => {
+    if (!cookieStatus?.exists) return 'text-red-600'
+    if (cookieStatus.needs_refresh) return 'text-yellow-600'
+    return 'text-green-600'
+  }
+
+  const getCookieStatusText = () => {
+    if (!cookieStatus?.exists) return 'Sin cookies'
+    if (cookieStatus.needs_refresh) return 'Necesitan actualización'
+    return 'Actualizadas'
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {/* Cookie Status Bar */}
+      <div className="card bg-gray-50 border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-medium">Estado de Cookies:</span>
+              <span className={`text-sm font-semibold ${getCookieStatusColor()}`}>
+                {getCookieStatusText()}
+              </span>
+            </div>
+            
+            {cookieStatus?.age_hours && (
+              <span className="text-xs text-gray-500">
+                (Edad: {cookieStatus.age_hours.toFixed(1)}h)
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCookieDetails(!showCookieDetails)}
+              className="text-xs text-gray-600 hover:text-gray-800"
+            >
+              {showCookieDetails ? 'Ocultar' : 'Detalles'}
+            </button>
+            
+            <button
+              onClick={refreshCookies}
+              disabled={cookieLoading}
+              className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
+            >
+              {cookieLoading ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3 h-3" />
+              )}
+              Actualizar
+            </button>
+          </div>
+        </div>
+
+        {showCookieDetails && (
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div>
+                <span className="font-medium">Existe:</span>
+                <span className={cookieStatus?.exists ? 'text-green-600 ml-1' : 'text-red-600 ml-1'}>
+                  {cookieStatus?.exists ? 'Sí' : 'No'}
+                </span>
+              </div>
+              {cookieStatus?.file_size && (
+                <div>
+                  <span className="font-medium">Tamaño:</span>
+                  <span className="ml-1">{formatFileSize(cookieStatus.file_size)}</span>
+                </div>
+              )}
+              {cookieStatus?.age_hours && (
+                <div>
+                  <span className="font-medium">Última actualización:</span>
+                  <span className="ml-1">{cookieStatus.age_hours.toFixed(1)} horas</span>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-2 text-xs text-gray-600">
+              <Cookie className="w-3 h-3 inline mr-1" />
+              Las cookies se usan para acceder a videos que requieren verificación.
+              Se actualizan automáticamente cada 24 horas.
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* URL Input */}
       <div className="card">
         <div className="flex flex-col sm:flex-row gap-4">
@@ -229,7 +414,7 @@ export default function VideoDownloader() {
         )}
       </div>
 
-      {/* Video Info */}
+      {/* Video Info - Rest of your existing component remains the same */}
       {videoInfo && (
         <div className="card">
           <div className="flex flex-col lg:flex-row gap-6">
@@ -283,6 +468,7 @@ export default function VideoDownloader() {
 
               {/* Opciones de descarga */}
               <div className="grid md:grid-cols-2 gap-6">
+                {/* Resto de tu componente existente... */}
                 {/* Formato de video */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -397,7 +583,7 @@ export default function VideoDownloader() {
         </div>
       )}
 
-      {/* Progress */}
+      {/* Progress - Rest remains the same */}
       {downloadProgress && (
         <div className="card">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
