@@ -63,7 +63,7 @@ interface CookieStatus {
 }
 
 const API_BASE = process.env.NODE_ENV === 'production'
-  ? 'https://video-downloader-app-ic05.onrender.com'
+  ? 'https://14e35fbf.video-downloader-app.pages.dev'
   : 'http://localhost:8000'
 
 export default function VideoDownloader() {
