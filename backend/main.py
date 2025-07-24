@@ -18,6 +18,22 @@ from typing import Optional, Dict, List
 import json
 import time
 from pathlib import Path
+import requests
+import random
+import string
+
+COOKIES_DIR = Path("cookies")
+COOKIES_DIR.mkdir(exist_ok=True)
+COOKIES_FILE = COOKIES_DIR / "cookies.txt"
+
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+}
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +58,168 @@ app.add_middleware(
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
+def generate_session_data():
+    """Genera datos de sesión aleatorios pero realistas"""
+    session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+    visitor_id = ''.join(random.choices(string.ascii_letters + string.digits, k=11))
+    client_id = ''.join(random.choices(string.digits, k=19))
+    
+    return {
+        'session_id': session_id,
+        'visitor_id': visitor_id,
+        'client_id': client_id
+    }
+
+def create_youtube_cookies():
+    """Crea un archivo de cookies básico para YouTube"""
+    try:
+        session_data = generate_session_data()
+        
+        # Cookies básicas de YouTube (formato Netscape)
+        cookies_content = f"""# Netscape HTTP Cookie File
+# This file contains the HTTP cookies for YouTube
+# Generated on {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+.youtube.com	TRUE	/	FALSE	{int(time.time()) + 31536000}	VISITOR_INFO1_LIVE	{session_data['visitor_id']}
+.youtube.com	TRUE	/	FALSE	{int(time.time()) + 31536000}	YSC	{session_data['session_id']}
+.youtube.com	TRUE	/	TRUE	{int(time.time()) + 31536000}	CONSENT	YES+cb.20210328-17-p0.en+FX+{random.randint(100, 999)}
+.youtube.com	TRUE	/	FALSE	{int(time.time()) + 31536000}	GPS	1
+.youtube.com	TRUE	/	FALSE	{int(time.time()) + 86400}	ST-{random.randint(1000000, 9999999)}	{session_data['client_id']}
+"""
+        
+        with open(COOKIES_FILE, 'w', encoding='utf-8') as f:
+            f.write(cookies_content)
+            
+        logger.info(f"Cookies creadas en: {COOKIES_FILE}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error creando cookies: {e}")
+        return False
+
+def refresh_cookies():
+    """Actualiza las cookies haciendo una request a YouTube"""
+    try:
+        # Hacer request a YouTube para obtener cookies frescas
+        session = requests.Session()
+        session.headers.update(BROWSER_HEADERS)
+        
+        # Request inicial a la página principal
+        response = session.get('https://www.youtube.com', timeout=10)
+        
+        if response.status_code == 200:
+            # Convertir cookies de requests a formato Netscape
+            cookies_lines = [
+                "# Netscape HTTP Cookie File",
+                f"# Generated on {time.strftime('%Y-%m-%d %H:%M:%S')}",
+                ""
+            ]
+            
+            for cookie in session.cookies:
+                # Formato: domain, domain_specified, path, secure, expires, name, value
+                domain = cookie.domain if cookie.domain.startswith('.') else f'.{cookie.domain}'
+                domain_specified = "TRUE" if cookie.domain_specified else "FALSE"
+                path = cookie.path or "/"
+                secure = "TRUE" if cookie.secure else "FALSE"
+                expires = str(int(cookie.expires)) if cookie.expires else str(int(time.time()) + 31536000)
+                
+                cookie_line = f"{domain}\t{domain_specified}\t{path}\t{secure}\t{expires}\t{cookie.name}\t{cookie.value}"
+                cookies_lines.append(cookie_line)
+            
+            with open(COOKIES_FILE, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(cookies_lines))
+                
+            logger.info("Cookies actualizadas desde YouTube")
+            return True
+        else:
+            logger.warning(f"Response code: {response.status_code}")
+            return create_youtube_cookies()  # Fallback
+            
+    except Exception as e:
+        logger.error(f"Error actualizando cookies: {e}")
+        return create_youtube_cookies()  # Fallback
+
+def ensure_cookies_exist():
+    """Asegura que existan cookies válidas"""
+    if not COOKIES_FILE.exists():
+        logger.info("No hay cookies, creando nuevas...")
+        return refresh_cookies()
+    
+    # Verificar si las cookies son muy antiguas (más de 24 horas)
+    try:
+        file_age = time.time() - COOKIES_FILE.stat().st_mtime
+        if file_age > 86400:  # 24 horas
+            logger.info("Cookies antiguas, actualizando...")
+            return refresh_cookies()
+    except:
+        return refresh_cookies()
+    
+    return True
+
+# Agregar estos endpoints a tu FastAPI app existente
+
+@app.get("/api/cookies/status")
+async def get_cookies_status():
+    """Verifica el estado de las cookies"""
+    try:
+        exists = COOKIES_FILE.exists()
+        if exists:
+            stat = COOKIES_FILE.stat()
+            age = time.time() - stat.st_mtime
+            size = stat.st_size
+            
+            return {
+                "exists": True,
+                "file_size": size,
+                "age_hours": round(age / 3600, 1),
+                "path": str(COOKIES_FILE),
+                "needs_refresh": age > 86400
+            }
+        else:
+            return {
+                "exists": False,
+                "needs_refresh": True
+            }
+    except Exception as e:
+        return {"error": str(e), "exists": False}
+
+@app.post("/api/cookies/refresh")
+async def refresh_cookies_endpoint():
+    """Actualiza las cookies manualmente"""
+    try:
+        success = refresh_cookies()
+        if success:
+            return {
+                "success": True,
+                "message": "Cookies actualizadas correctamente",
+                "file_path": str(COOKIES_FILE)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Error actualizando cookies")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.delete("/api/cookies/clear")
+async def clear_cookies():
+    """Elimina las cookies existentes"""
+    try:
+        if COOKIES_FILE.exists():
+            COOKIES_FILE.unlink()
+            return {"success": True, "message": "Cookies eliminadas"}
+        else:
+            return {"success": True, "message": "No había cookies que eliminar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+# Modificar tu función cleanup_old_files para incluir esto:
+def ensure_cookies_on_startup():
+    """Asegura que hay cookies al iniciar la aplicación"""
+    logger.info("Verificando cookies al iniciar...")
+    if ensure_cookies_exist():
+        logger.info("Cookies listas")
+    else:
+        logger.warning("No se pudieron crear cookies, algunos videos podrían fallar")
+        
 # Limpiar archivos antiguos al iniciar
 def cleanup_old_files():
     """Elimina archivos de más de 1 hora"""
@@ -57,6 +235,7 @@ def cleanup_old_files():
         logger.error(f"Error limpiando archivos: {e}")
 
 cleanup_old_files()
+ensure_cookies_on_startup() 
 
 class VideoInfoRequest(BaseModel):
     url: str
