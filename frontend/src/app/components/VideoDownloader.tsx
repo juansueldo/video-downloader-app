@@ -97,8 +97,7 @@ export default function VideoDownloader() {
     try {
       const response = await axios.get(`${API_BASE}/api/cookies/status`)
       setCookieStatus(response.data)
-    } catch (error) {
-      console.error('Error checking cookies:', error)
+    } catch {
       setCookieStatus({ exists: false, needs_refresh: true })
     }
   }
@@ -111,8 +110,9 @@ export default function VideoDownloader() {
         await checkCookieStatus()
         setError('')
       }
-    } catch (error: any) {
-      const errorMsg = error?.response?.data?.detail || error?.message || 'Error desconocido'
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } }, message?: string }
+      const errorMsg = err?.response?.data?.detail || err?.message || 'Error desconocido'
       setError(`Error actualizando cookies: ${errorMsg}`)
     } finally {
       setCookieLoading(false)
