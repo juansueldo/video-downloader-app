@@ -58,6 +58,17 @@ app.add_middleware(
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0',
+]
+
+def get_random_user_agent():
+    return random.choice(USER_AGENTS)
+    
 def generate_session_data():
     """Genera datos de sesión aleatorios pero realistas"""
     session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
@@ -96,7 +107,39 @@ def create_youtube_cookies():
     except Exception as e:
         logger.error(f"Error creando cookies: {e}")
         return False
-
+def get_enhanced_ydl_opts():
+    """Opciones mejoradas para yt-dlp"""
+    return {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'extract_flat': False,
+        'cookiefile': str(COOKIES_FILE),
+        # Headers más realistas
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        },
+        # Configuraciones adicionales
+        'extractor_args': {
+            'youtube': {
+                'skip': ['hls', 'dash'],  # Evitar formatos problemáticos
+                'player_skip': ['configs'],
+            }
+        },
+        # Reintentos y timeouts
+        'retries': 3,
+        'fragment_retries': 3,
+        'socket_timeout': 30,
+        # Evitar detección de bot
+        'sleep_interval': 1,
+        'max_sleep_interval': 5,
+    }
+    
 def refresh_cookies():
     """Actualiza las cookies haciendo una request a YouTube"""
     try:
@@ -315,15 +358,13 @@ async def get_video_info(request: VideoInfoRequest):
     """Obtiene información detallada del video"""
     try:
         logger.info(f"Obteniendo info para: {request.url}")
+        ensure_cookies_exist()
+        
+        ydl_opts = get_enhanced_ydl_opts()
+        ydl_opts['http_headers']['User-Agent'] = get_random_user_agent()
 
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'extract_flat': False,
-            'cookiefile': 'cookies/cookies.txt',
-        }
-
+        await asyncio.sleep(random.uniform(0.5, 2.0))
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
 
