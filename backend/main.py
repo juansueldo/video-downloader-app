@@ -48,7 +48,7 @@ app = FastAPI(
 # CORS middleware - Permitir todas las origins para demo
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios exactos
+    allow_origins=["https://video-downloader-app-kappa.vercel.app"],  # En producción, especificar dominios exactos
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
